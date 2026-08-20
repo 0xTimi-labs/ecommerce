@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { latestSessionFile, parseResult, pickReviewSkill } from "./run";
+import { buildPrompt, latestSessionFile, parseResult, pickReviewSkill, resolveReviewMode } from "./run";
 
 test("契约相关文件选择 artifact-reviewer", () => {
   expect(pickReviewSkill(["contracts/proto/ordering/v1/ordering.proto"])).toBe("artifact-reviewer");
@@ -46,4 +46,18 @@ test("parseResult 只接受 pass 与 block", () => {
   expect(parseResult('{"verdict":"block","findings":[]}').verdict).toBe("block");
   expect(() => parseResult('{"verdict":"maybe"}')).toThrow();
   expect(() => parseResult("not json")).toThrow();
+});
+
+test("状态机：merge_group 为 GROUP，pull_request 按会话分 FRESH/CONTINUE", () => {
+  expect(resolveReviewMode("merge_group", null)).toBe("GROUP");
+  expect(resolveReviewMode("merge_group", "session.jsonl")).toBe("GROUP");
+  expect(resolveReviewMode("pull_request", null)).toBe("FRESH");
+  expect(resolveReviewMode("pull_request", "session.jsonl")).toBe("CONTINUE");
+});
+
+test("状态机：CONTINUE 追加复查指令，其余模式保持单一 skill 触发", () => {
+  expect(buildPrompt("FRESH", "code-reviewer")).toBe("/skill:code-reviewer");
+  expect(buildPrompt("GROUP", "artifact-reviewer")).toBe("/skill:artifact-reviewer");
+  expect(buildPrompt("CONTINUE", "code-reviewer")).toContain("/skill:code-reviewer");
+  expect(buildPrompt("CONTINUE", "code-reviewer")).toContain("复查既有发现");
 });

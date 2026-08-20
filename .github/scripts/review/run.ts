@@ -19,6 +19,27 @@ export interface ReviewResult {
   findings?: Finding[];
 }
 
+// 审查状态机
+// ReviewMode（事件与会话决定审查形态）：
+//   FRESH    — 无会话：全量审查，新建会话
+//   CONTINUE — 同 PR 后续 push 且有会话：续接复查（聚焦既有发现与新增 diff）
+//   GROUP    — merge_group 组合 SHA：独立全量审查，不复用会话
+// 判定状态流转：in_progress → completed(success|failure)；任何异常 → failure（fail-closed）
+export type ReviewMode = "FRESH" | "CONTINUE" | "GROUP";
+
+export function resolveReviewMode(eventName: string, sessionFile: string | null): ReviewMode {
+  if (eventName === "merge_group") return "GROUP";
+  return sessionFile ? "CONTINUE" : "FRESH";
+}
+
+export function buildPrompt(mode: ReviewMode, skill: string): string {
+  const base = `/skill:${skill}`;
+  if (mode === "CONTINUE") {
+    return `${base}\n这是同一 PR 的后续推送：复查既有发现的关闭情况，并审查新增变更`;
+  }
+  return base;
+}
+
 // 契约相关文件变更 → artifact-reviewer；否则 code-reviewer
 export function pickReviewSkill(changedFiles: string[]): string {
   const contractMarker = /^(contracts\/|docs\/|tests\/features\/|context\.md|context-map\.md)/;
@@ -140,20 +161,23 @@ if (import.meta.main) {
       : changedFilesForPr(repo, prNumber ?? "");
   const skill = pickReviewSkill(changedFiles);
 
+  const sessionFile = latestSessionFile(join(process.cwd(), SESSION_DIR));
+  const mode = resolveReviewMode(eventName, sessionFile);
+  const prompt = buildPrompt(mode, skill);
+
   const checkRunId = createCheckRun(repo, headSha);
   const finish = (conclusion: string, summary: string): void =>
     finishCheckRun(repo, checkRunId, conclusion, summary);
 
-  const sessionFile = latestSessionFile(join(process.cwd(), SESSION_DIR));
   const piArgs = [
-    "-p", `/skill:${skill}`,
+    "-p", prompt,
     "--approve",
     "--session-dir", SESSION_DIR,
     "--model", PI_MODEL,
   ];
-  if (sessionFile) piArgs.push("--session", sessionFile);
+  if (mode === "CONTINUE" && sessionFile) piArgs.push("--session", sessionFile);
 
-  console.log(`审查启动: skill=${skill} session=${sessionFile ?? "(新会话)"}`);
+  console.log(`审查启动: mode=${mode} skill=${skill} session=${sessionFile ?? "(新会话)"}`);
   const pi = spawnSync("pi", piArgs, { encoding: "utf-8", env: process.env });
   if (pi.status !== 0) {
     finish("failure", `审查未完成：pi 退出码 ${pi.status}`);

@@ -1,3 +1,5 @@
+# PR 状态约定（draft 排除 / ready 全量 / synchronize 重跑 / merge_group 重验）
+# draft PR 不跑任何门禁 job：GitHub 默认会对 draft 触发 pull_request 事件，必须显式排除
 name: CI
 
 on:
@@ -16,15 +18,20 @@ concurrency:
 jobs:
   rust:
     name: Rust
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1 (stable)
+      - name: 更新 stable 工具链
+        run: rustup update stable && rustup component add clippy rustfmt
+      - name: 安装 cargo-nextest
+        run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
       - run: make rust-check
       - run: make rust-test
 
   tools:
     name: Tools
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,7 +41,7 @@ jobs:
   gate:
     name: CI / Required
     needs: [rust, tools]
-    if: always()
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,7 +53,7 @@ jobs:
   review:
     name: Review / Required
     needs: [gate]
-    if: ${{ always() && needs.gate.result == 'success' }}
+    if: ${{ always() && needs.gate.result == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
