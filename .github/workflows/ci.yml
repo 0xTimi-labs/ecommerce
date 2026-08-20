@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac51fbff1b6c8e6813c0e2e0fda23e5 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca40731bdf2416efc3de017d17d3bcd1d # v1 (stable)
+      - run: make rust-check
+      - run: make rust-test
+
+  tools:
+    name: Tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac51fbff1b6c8e6813c0e2e0fda23e5 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: make tools-check
+
+  gate:
+    name: CI / Required
+    needs: [rust, tools]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac51fbff1b6c8e6813c0e2e0fda23e5 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun .github/scripts/gate.ts
+        env:
+          GATE_RESULTS: ${{ toJson(needs) }}
+
+  review:
+    name: Review / Required
+    needs: [gate]
+    if: ${{ always() && needs.gate.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac51fbff1b6c8e6813c0e2e0fda23e5 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun add -g --ignore-scripts @earendil-works/pi-coding-agent
+      - uses: actions/cache@55cc8345863c8e39c1d4b2281a0eb8d4b1a26b58 # v6.1.0
+        with:
+          path: .pi_session
+          key: pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-${{ github.run_id }}
+          restore-keys: |
+            pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-
+      - run: bun .github/scripts/review/run.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}

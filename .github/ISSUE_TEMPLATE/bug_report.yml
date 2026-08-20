@@ -1,0 +1,23 @@
+name: 缺陷报告
+description: 报告一个缺陷
+labels: ["type/bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 描述实际发生的行为
+    validations:
+      required: true
+  - type: textarea
+    id: expect
+    attributes:
+      label: 期望行为
+      description: 描述应当发生的行为
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 按顺序列出复现路径

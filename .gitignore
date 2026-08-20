@@ -1,2 +1,8 @@
 .idea/
 target/
+node_modules/
+dist/
+.DS_Store
+.pi_session/
+.review-result.json
+.review-findings.json
