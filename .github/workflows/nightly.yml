@@ -1,0 +1,16 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "30 16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  placeholder:
+    name: 占位（实现阶段解锁）
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "变异测试、audit、契约漂移巡检将在实现阶段接入"

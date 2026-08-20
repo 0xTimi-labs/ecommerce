@@ -1,0 +1,90 @@
+# PR 状态约定（draft 排除 / ready 全量 / synchronize 重跑 / merge_group 重验）
+# draft PR 不跑任何门禁 job：GitHub 默认会对 draft 触发 pull_request 事件，必须显式排除
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 更新 stable 工具链
+        run: rustup update stable && rustup component add clippy rustfmt
+      - name: 安装 cargo-nextest
+        run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+      - run: make fmt lint
+      - run: cargo nextest run --workspace
+
+  tools:
+    name: Tools
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun test tools/review-submit
+
+  gate:
+    name: CI / Required
+    needs: [rust, tools]
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun .github/scripts/gate.ts
+        env:
+          GATE_RESULTS: ${{ toJson(needs) }}
+
+  review:
+    name: Review / Required
+    needs: [gate]
+    if: ${{ always() && needs.gate.result == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun add -g --ignore-scripts @earendil-works/pi-coding-agent
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: session-restore
+        with:
+          path: .pi_session
+          key: pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-${{ github.run_id }}
+          restore-keys: |
+            pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-
+      - run: bun .github/scripts/review/run.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
+          BASE_REF: ${{ github.event.merge_group.base_ref || github.event.pull_request.base.ref }}
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: ${{ always() && steps.session-restore.outputs.cache-hit != 'true' }}
+        with:
+          path: .pi_session
+          key: pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-${{ github.run_id }}

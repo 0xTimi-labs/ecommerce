@@ -1,0 +1,16 @@
+name: 功能想法
+description: 提出功能想法
+labels: ["type/feature"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: 想法
+      description: 描述目标与动机
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 边界
+      description: 明确做什么、不做什么
