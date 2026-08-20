@@ -20,8 +20,10 @@ jobs:
           fetch-depth: 0
       - name: 判断工作流侧是否有变更
         id: scope
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref || 'main' }}
         run: |
-          if git diff --quiet origin/main...HEAD -- .github/ 2>/dev/null; then
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- .github/ 2>/dev/null; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"

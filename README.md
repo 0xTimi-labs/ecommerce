@@ -22,7 +22,7 @@ AI 友好型架构最佳实践演示项目：契约优先、DDD + 端口适配�
 
 ## 本地开发
 
-依赖：Rust stable、Bun、cargo-nextest。
+依赖：Rust stable（1.85+）、Bun、cargo-nextest（安装见 https://nexte.st/book/pre-built-binaries.html ）。
 
 ```bash
 make check   # 全部检查
