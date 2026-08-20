@@ -26,8 +26,8 @@ jobs:
         run: rustup update stable && rustup component add clippy rustfmt
       - name: 安装 cargo-nextest
         run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
-      - run: make rust-check
-      - run: make rust-test
+      - run: make fmt lint
+      - run: cargo nextest run --workspace
 
   tools:
     name: Tools
@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: make tools-check
+      - run: bun test tools/review-submit
 
   gate:
     name: CI / Required
@@ -66,7 +66,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun add -g --ignore-scripts @earendil-works/pi-coding-agent
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .pi_session
           key: pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-${{ github.run_id }}
@@ -81,3 +81,9 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
+          BASE_REF: ${{ github.event.merge_group.base_ref || github.event.pull_request.base.ref }}
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: .pi_session
+          key: pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-${{ github.run_id }}

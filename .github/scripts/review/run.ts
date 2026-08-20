@@ -88,8 +88,10 @@ function changedFilesForPr(repo: string, prNumber: string): string[] {
   return proc.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
 }
 
-function changedFilesForMergeGroup(): string[] {
-  const proc = spawnSync("git", ["diff", "--name-only", "origin/main...HEAD"], { encoding: "utf-8" });
+function changedFilesForMergeGroup(baseRef: string): string[] {
+  const proc = spawnSync("git", ["diff", "--name-only", `origin/${baseRef}...HEAD`], {
+    encoding: "utf-8",
+  });
   if (proc.status !== 0) return [];
   return proc.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
 }
@@ -124,12 +126,16 @@ function finishCheckRun(repo: string, checkRunId: number, conclusion: string, su
       "-f", "status=completed",
       "-f", `conclusion=${conclusion}`,
       "-f", `completed_at=${completedAt}`,
-      "-f", "output[title]=AI Review",
-      "-f", `output[summary]=${summary}`,
+      "-F", "output[title]=AI Review",
+      "-F", `output[summary]=${summary}`,
     ],
     { encoding: "utf-8" },
   );
   if (proc.status !== 0) console.error(`发布结论失败: ${proc.stderr}`);
+}
+
+function formatFinding(f: Finding): string {
+  return `- [${f.severity}] ${f.file}: ${f.summary}`;
 }
 
 if (import.meta.main) {
@@ -145,10 +151,10 @@ if (import.meta.main) {
   }
 
   // fork PR：GITHUB_TOKEN 只读且拿不到模型凭证，无法发布 check run 也无法审查
-  // 结果：Review / Required 保持 Pending，外部 PR 无法自动合并（fail-closed）
+  // exit 1 让 Review / Required 变红：外部 PR 不因跳过而获绿，需人类处理（fail-closed）
   if (eventName === "pull_request" && isFork) {
-    console.log("fork PR：跳过 AI 审查，Review / Required 保持 Pending");
-    process.exit(0);
+    console.error("fork PR：无审查能力，Review / Required 阻断");
+    process.exit(1);
   }
   if (!process.env.DEEPSEEK_API_KEY) {
     console.error("缺少 DEEPSEEK_API_KEY");
@@ -157,7 +163,7 @@ if (import.meta.main) {
 
   const changedFiles =
     eventName === "merge_group"
-      ? changedFilesForMergeGroup()
+      ? changedFilesForMergeGroup(process.env.BASE_REF ?? "main")
       : changedFilesForPr(repo, prNumber ?? "");
   const skill = pickReviewSkill(changedFiles);
 
@@ -184,11 +190,12 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  // 会话目录只保留本次使用的文件
+  // pi 运行后再取最新会话作为保留目标（FRESH 模式下新会话刚生成）
   const sessionDir = join(process.cwd(), SESSION_DIR);
+  const activeSession = latestSessionFile(sessionDir);
   for (const name of existsSync(sessionDir) ? readdirSync(sessionDir) : []) {
     const path = join(sessionDir, name);
-    if (path !== sessionFile && name.endsWith(".jsonl")) {
+    if (path !== activeSession && name.endsWith(".jsonl")) {
       try {
         unlinkSync(path);
       } catch {
@@ -212,9 +219,14 @@ if (import.meta.main) {
   }
 
   if (result.verdict === "pass") {
-    finish("success", "审查通过，无 P0 阻断");
+    const notes = result.findings ?? [];
+    const summary =
+      notes.length > 0
+        ? `审查通过（${notes.length} 条建议）：\n${notes.map(formatFinding).join("\n")}`
+        : "审查通过，无 P0 阻断";
+    finish("success", summary);
   } else {
-    const lines = (result.findings ?? []).map((f) => `- [${f.severity}] ${f.file}: ${f.summary}`);
+    const lines = (result.findings ?? []).map(formatFinding);
     finish("failure", `审查阻断（P0）：\n${lines.join("\n")}`);
     process.exit(1);
   }

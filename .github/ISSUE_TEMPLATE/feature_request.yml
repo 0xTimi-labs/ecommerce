@@ -1,5 +1,5 @@
 name: 功能想法
-description: 提出功能想法（公开讨论）
+description: 提出功能想法
 labels: ["type/feature"]
 body:
   - type: textarea

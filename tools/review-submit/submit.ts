@@ -19,11 +19,7 @@ if (verdict !== "pass" && verdict !== "block") {
 
 const result: { verdict: string; findings?: unknown } = { verdict };
 
-if (verdict === "block") {
-  if (!findingsFile) {
-    console.error("verdict=block 时必须提供 --findings-file");
-    process.exit(2);
-  }
+if (findingsFile) {
   let findings: unknown;
   try {
     findings = JSON.parse(await Bun.file(findingsFile).text());
@@ -36,6 +32,11 @@ if (verdict === "block") {
     process.exit(2);
   }
   result.findings = findings;
+}
+
+if (verdict === "block" && !findingsFile) {
+  console.error("verdict=block 时必须提供 --findings-file");
+  process.exit(2);
 }
 
 const outFile = process.env.REVIEW_RESULT_FILE ?? ".review-result.json";
