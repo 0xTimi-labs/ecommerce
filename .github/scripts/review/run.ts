@@ -89,10 +89,12 @@ function changedFilesForPr(repo: string, prNumber: string): string[] {
 }
 
 function changedFilesForMergeGroup(baseRef: string): string[] {
-  const proc = spawnSync("git", ["diff", "--name-only", `origin/${baseRef}...HEAD`], {
+  // merge_group 的 base_ref 是完整引用（refs/heads/main），需去除前缀
+  const branch = baseRef.replace(/^refs\/heads\//, "");
+  const proc = spawnSync("git", ["diff", "--name-only", `origin/${branch}...HEAD`], {
     encoding: "utf-8",
   });
-  if (proc.status !== 0) return [];
+  if (proc.status !== 0) throw new Error(`获取 merge_group 变更文件失败: ${proc.stderr}`);
   return proc.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
 }
 

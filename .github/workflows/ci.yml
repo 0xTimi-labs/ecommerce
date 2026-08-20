@@ -67,6 +67,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun add -g --ignore-scripts @earendil-works/pi-coding-agent
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: session-restore
         with:
           path: .pi_session
           key: pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-${{ github.run_id }}
@@ -83,7 +84,7 @@ jobs:
           IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
           BASE_REF: ${{ github.event.merge_group.base_ref || github.event.pull_request.base.ref }}
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: always()
+        if: ${{ always() && steps.session-restore.outputs.cache-hit != 'true' }}
         with:
           path: .pi_session
           key: pi-session-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}-${{ github.run_id }}
